@@ -2,10 +2,10 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Philly Provider Map</title>
+    <title>Provider Map</title>
+
     <style>
-      html,
-      body {
+      html, body {
         height: 100%;
         margin: 0;
         padding: 0;
@@ -16,312 +16,159 @@
         height: 100%;
         width: 100%;
       }
-
-      /* Bottom-left control stack */
-      #controls-wrapper {
-        position: absolute;
-        bottom: 16px;
-        left: 16px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        z-index: 5;
-      }
-
-      .control-box {
-        background: rgba(255, 255, 255, 0.95);
-        padding: 8px 10px;
-        border-radius: 6px;
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
-        font-size: 12px;
-        max-width: 260px;
-      }
-
-      .control-title {
-        font-weight: bold;
-        margin-bottom: 4px;
-        font-size: 13px;
-      }
-
-      /* Legend styles */
-      #legend .legend-row {
-        display: flex;
-        align-items: center;
-        margin-bottom: 2px;
-      }
-      .legend-color {
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        margin-right: 6px;
-        border: 1px solid #555;
-      }
-
-      .legend-size-row {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 4px;
-        margin-top: 4px;
-      }
-
-      .legend-size-item {
-        display: flex;
-        align-items: center;
-      }
-
-      .legend-size-circle {
-        border-radius: 50%;
-        border: 1px solid #555;
-        margin-right: 6px;
-      }
-
-      /* Stats panel */
-      #stats-box .stats-line {
-        margin-bottom: 2px;
-      }
-
-      .stats-type-row {
-        display: flex;
-        align-items: flex-start;
-        margin-bottom: 2px;
-      }
-
-      .stats-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        margin-right: 6px;
-        margin-top: 3px;
-        border: 1px solid #555;
-        flex-shrink: 0;
-      }
     </style>
   </head>
 
   <body>
     <div id="map"></div>
 
-    <div id="controls-wrapper">
-      <!-- Filter -->
-      <div id="filter-box" class="control-box">
-        <div class="control-title">Filter</div>
-        <label>
-          Min members:
-          <input id="minMembersInput" type="number" min="0" step="10" value="0" />
-        </label>
-        <button id="applyFilterBtn">Apply</button>
-      </div>
-
-      <!-- Stats -->
-      <div id="stats-box" class="control-box">
-        <div class="control-title">Visible Providers</div>
-        <div id="stats-content">
-          Providers: 0<br />
-          Total Members: 0
-        </div>
-      </div>
-
-      <!-- Legend -->
-      <div id="legend" class="control-box">
-        <div class="control-title">Legend</div>
-
-        <div style="font-weight:bold; margin-bottom:4px;">By Affiliation</div>
-        
-        <div class="legend-row">
-          <span class="legend-color" style="background:#1f78b4;"></span>Main Line
-        </div>
-        <div class="legend-row">
-          <span class="legend-color" style="background:#e31a1c;"></span>Jefferson
-        </div>
-        <div class="legend-row">
-          <span class="legend-color" style="background:#33a02c;"></span>St. Luke's
-        </div>
-        <div class="legend-row">
-          <span class="legend-color" style="background:#ff7f00;"></span>Tandigm
-        </div>
-        <div class="legend-row">
-          <span class="legend-color" style="background:#6a3d9a;"></span>UPenn
-        </div>
-        <div class="legend-row">
-          <span class="legend-color" style="background:#bbbbbb;"></span>Other
-        </div>
-
-        <div style="margin-top:6px; font-weight:bold;">
-          Attributed Members = Circle Size
-        </div>
-
-        <div class="legend-size-row">
-          <div class="legend-size-item">
-            <span id="legend-min-circle" class="legend-size-circle" style="width:8px; height:8px;"></span>
-            <span id="legend-min-text">Smallest: N/A</span>
-          </div>
-          <div class="legend-size-item">
-            <span id="legend-max-circle" class="legend-size-circle" style="width:20px; height:20px;"></span>
-            <span id="legend-max-text">Largest: N/A</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- MAIN SCRIPT -->
     <script>
       let map;
       let markers = [];
-      let allData = [];
       let infoWindow;
-      let minPatientsGlobal = null;
-      let maxPatientsGlobal = null;
-
-      function getAffiliationColor(aff) {
-        if (!aff) return "#bbbbbb";
-
-        const a = aff.toLowerCase();
-        if (a.includes("main line")) return "#1f78b4";
-        if (a.includes("jefferson")) return "#e31a1c";
-        if (a.includes("st. luke")) return "#33a02c";
-        if (a.includes("tandigm")) return "#ff7f00";
-        if (a.includes("penn")) return "#6a3d9a";
-
-        return "#bbbbbb";
-      }
-
-      function computeRadius(val, minVal, maxVal) {
-        if (minVal === maxVal) return 10;
-        return 8 + ((val - minVal) / (maxVal - minVal)) * 22;
-      }
 
       function initMap() {
         map = new google.maps.Map(document.getElementById("map"), {
-          center: { lat: 40.0, lng: -75.2 },
-          zoom: 8,
+          center: { lat: 39.95, lng: -75.16 },
+          zoom: 10,
+          mapTypeId: "roadmap",
+
+          // ⭐ Cleaner, muted map for better point visibility
+          styles: [
+            { elementType: "geometry", stylers: [{ lightness: 10 }] },
+            { elementType: "labels.text.fill", stylers: [{ color: "#555" }] },
+            { elementType: "labels.text.stroke", stylers: [{ color: "#ffffff" }] },
+            { featureType: "poi", stylers: [{ visibility: "off" }] },
+            { featureType: "transit", stylers: [{ visibility: "off" }] }
+          ]
         });
 
         infoWindow = new google.maps.InfoWindow();
 
         fetch("data.geojson")
-          .then((res) => res.json())
-          .then((geojson) => {
-            allData = geojson.features;
-            createMarkers();
-            setupFilter();
+          .then(r => {
+            if (!r.ok) throw new Error("Could not load data.geojson");
+            return r.json();
           })
-          .catch((err) => {
+          .then(geojson => {
+            const features = geojson.features || [];
+            addMarkers(features);
+          })
+          .catch(err => {
             console.error(err);
-            alert("Could not load data.geojson. Check file name or format.");
+            alert("Could not load data.geojson. Check file path or format.");
           });
       }
 
-      function createMarkers() {
-        markers.forEach((m) => m.setMap(null));
-        markers = [];
-
-        let minVal = Infinity;
-        let maxVal = -Infinity;
-
-        allData.forEach((f) => {
-          const v = f.properties["Member Attribution"];
-          if (typeof v === "number") {
-            if (v < minVal) minVal = v;
-            if (v > maxVal) maxVal = v;
+      function addMarkers(features) {
+        // Determine dataset min/max for circle sizes
+        let minP = Infinity, maxP = -Infinity;
+        features.forEach(f => {
+          const m = parseFloat(f.properties["Member Attribution"]);
+          if (!isNaN(m)) {
+            if (m < minP) minP = m;
+            if (m > maxP) maxP = m;
           }
         });
+        if (minP === Infinity) minP = maxP = 0;
 
-        minPatientsGlobal = minVal;
-        maxPatientsGlobal = maxVal;
+        features.forEach(feature => {
+          if (!feature.geometry || feature.geometry.type !== "Point") return;
 
-        document.getElementById("legend-min-text").textContent = "Smallest: " + minVal;
-        document.getElementById("legend-max-text").textContent = "Largest: " + maxVal;
-
-        allData.forEach((feature) => {
-          const coords = feature.geometry.coordinates;
+          const [lng, lat] = feature.geometry.coordinates;
           const props = feature.properties;
 
-          const lat = coords[1];
-          const lng = coords[0];
+          const providerName =
+            props["Provider / Facility"] ||
+            props["Provider"] ||
+            props["Facility"] ||
+            "Unknown Provider";
 
-          const radius = computeRadius(
-            props["Member Attribution"],
-            minVal,
-            maxVal
-          );
+          const address = [
+            props.Address,
+            props.City,
+            props.State,
+            props.Zip
+          ].filter(Boolean).join(", ");
 
-          const marker = new google.maps.Circle({
-            strokeColor: getAffiliationColor(props.Affiliation),
-            strokeOpacity: 0.8,
-            strokeWeight: 1,
-            fillColor: getAffiliationColor(props.Affiliation),
-            fillOpacity: 0.6,
+          const patients = parseFloat(props["Member Attribution"]) || 0;
+          const type = props.Type || "Unknown";
+
+          // Compute radius (⭐ bumped min size from 6 → 10)
+          const radius = computeRadius(patients, minP, maxP);
+
+          // Assign color based on type
+          const color = getTypeColor(type);
+
+          // ⭐ Add shadow for depth
+          new google.maps.Marker({
+            position: { lat, lng },
             map,
-            center: { lat, lng },
-            radius: radius * 40,
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              fillColor: "#000000",
+              fillOpacity: 0.25,
+              strokeWeight: 0,
+              scale: radius + 3
+            },
+            zIndex: 1
           });
 
-          marker.meta = props;
+          // ⭐ Main marker with white halo outline
+          const marker = new google.maps.Marker({
+            position: { lat, lng },
+            map,
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              fillColor: color,
+              fillOpacity: 0.85,
+              strokeColor: "#ffffff",   // white halo
+              strokeWeight: 2.2,         // thicker outline
+              scale: radius
+            },
+            zIndex: 2
+          });
 
-          marker.addListener("click", () => {
-            const html = `
+          marker.addListener("mouseover", () => {
+            infoWindow.setContent(`
               <div>
-                <b>${props["Provider / Facility"]}</b><br/>
-                ${props.Address}, ${props.City}, ${props.State} ${props.Zip}<br/>
-                Type: ${props.Type}<br/>
-                Member Attribution: ${props["Member Attribution"]}
+                <div style="font-weight:bold; font-size:14px; margin-bottom:4px;">${providerName}</div>
+                <div>${address}</div>
+                <div>Type: ${type}</div>
+                <div>Member Attribution: ${String(patients).replace(".0", "")}</div>
               </div>
-            `;
-
-            infoWindow.setContent(html);
-            infoWindow.setPosition({ lat, lng });
-            infoWindow.open(map);
+            `);
+            infoWindow.open({ anchor: marker, map });
           });
+
+          marker.addListener("mouseout", () => infoWindow.close());
 
           markers.push(marker);
         });
-
-        updateStats();
       }
 
-      function setupFilter() {
-        document.getElementById("applyFilterBtn").onclick = applyFilter;
+      function computeRadius(p, minP, maxP) {
+        const minR = 10;  // ⭐ bumped from 6 → 10
+        const maxR = 32;
+
+        if (maxP <= minP) return (minR + maxR) / 2;
+        const norm = (p - minP) / (maxP - minP);
+        return minR + norm * (maxR - minR);
       }
 
-      function applyFilter() {
-        const minVal = parseInt(
-          document.getElementById("minMembersInput").value
-        );
-
-        markers.forEach((m) => {
-          if (m.meta["Member Attribution"] >= minVal) {
-            m.setMap(map);
-          } else {
-            m.setMap(null);
-          }
-        });
-
-        updateStats();
-      }
-
-      function updateStats() {
-        let count = 0;
-        let total = 0;
-
-        markers.forEach((m) => {
-          if (m.getMap()) {
-            count++;
-            total += m.meta["Member Attribution"];
-          }
-        });
-
-        document.getElementById("stats-content").innerHTML =
-          `Providers: ${count}<br>Total Members: ${total}`;
+      function getTypeColor(type) {
+        const t = type.toLowerCase();
+        if (t.includes("fqhc")) return "#d73027";
+        if (t.includes("performance")) return "#1a9850";
+        if (t.includes("hospital")) return "#542788";
+        if (t.includes("community")) return "#ffd92f";
+        return "#888888";
       }
     </script>
 
-    <!-- GOOGLE MAPS API LOAD -->
-    <script
-      async
-      defer
-      src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDA3kRQCQIWUxnsE1b0__QSyCfFKkHwN8A&callback=initMap"
-    ></script>
+    <script async defer 
+      src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDA3kRQCQIWUxnsE1b0__QSyCfFKkHwN8A&callback=initMap">
+    </script>
   </body>
 </html>
 
