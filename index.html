@@ -1,140 +1,144 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Provider Map</title>
+<head>
+  <meta charset="utf-8" />
+  <title>Provider Map</title>
 
-    <style>
-      body, html {
-        margin: 0;
-        padding: 0;
-        height: 100%;
-        width: 100%;
-      }
-      #map {
-        height: 100%;
-        width: 100%;
-      }
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+    }
+    #map {
+      height: 100%;
+      width: 100%;
+    }
 
-      /* Legend box */
-      .legend {
-        position: absolute;
-        bottom: 20px;
-        left: 20px;
-        background: white;
-        padding: 12px;
-        border-radius: 6px;
-        font-family: Arial, sans-serif;
-        font-size: 14px;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-      }
-      .legend-item {
-        display: flex;
-        align-items: center;
-        margin-bottom: 6px;
-      }
-      .legend-color {
-        width: 14px;
-        height: 14px;
-        border-radius: 50%;
-        margin-right: 8px;
-        border: 2px solid #fff;
-      }
-    </style>
+    /* Color Legend */
+    .legend {
+      position: absolute;
+      background: white;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 14px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      z-index: 9999;
+    }
 
-    <!-- Load Google Maps JS API -->
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDA3kRQCQIWUxnsE1b0__QSyCfFKkHwN8A"></script>
-  </head>
+    /* Popup hover box */
+    .hover-box {
+      position: absolute;
+      background: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      pointer-events: none;
+      font-size: 13px;
+      display: none;
+    }
+  </style>
+</head>
 
-  <body>
-    <div id="map"></div>
+<body>
+<div id="map"></div>
+<div id="hoverBox" class="hover-box"></div>
 
-    <!-- Legend -->
-    <div class="legend" id="legend">
-      <div class="legend-item">
-        <div class="legend-color" style="background:#1f77b4;"></div> Main Line
-      </div>
-      <div class="legend-item">
-        <div class="legend-color" style="background:#ff7f0e;"></div> Jefferson
-      </div>
-      <div class="legend-item">
-        <div class="legend-color" style="background:#2ca02c;"></div> St. Luke's
-      </div>
-      <div class="legend-item">
-        <div class="legend-color" style="background:#d62728;"></div> Tandigm
-      </div>
-      <div class="legend-item">
-        <div class="legend-color" style="background:#9467bd;"></div> UPenn
-      </div>
-    </div>
+<!-- Affiliation Color Legend -->
+<div class="legend" style="bottom: 20px; left: 20px;">
+  <strong>Affiliation</strong><br><br>
+  <div><span style="background:#1f77b4;width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:8px;"></span>Main Line</div>
+  <div><span style="background:#ff7f0e;width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:8px;"></span>Jefferson</div>
+  <div><span style="background:#2ca02c;width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:8px;"></span>St. Luke's</div>
+  <div><span style="background:#d62728;width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:8px;"></span>Tandigm</div>
+  <div><span style="background:#9467bd;width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:8px;"></span>UPenn</div>
+</div>
 
-    <script>
-      function initMap() {
-        const map = new google.maps.Map(document.getElementById("map"), {
-          zoom: 9,
-          center: { lat: 40.0, lng: -75.2 },
-          mapId: "providerMap"
-        });
+<!-- Circle Size Legend -->
+<div class="legend" style="bottom: 180px; left: 20px;">
+  <strong>Member Attribution</strong><br><br>
 
-        // Color mapping by affiliation
-        function getColor(aff) {
-          switch (aff) {
-            case "Main Line": return "#1f77b4";
-            case "Jefferson": return "#ff7f0e";
-            case "St. Luke's": return "#2ca02c";
-            case "Tandigm": return "#d62728";
-            case "UPenn": return "#9467bd";
-            default: return "#555";
-          }
-        }
+  <div style="display:flex; align-items:center; margin-bottom:8px;">
+    <div style="width:26px;height:26px;border-radius:50%;background:#888;border:2px solid #fff;margin-right:10px;opacity:0.8;"></div> High
+  </div>
+  <div style="display:flex; align-items:center; margin-bottom:8px;">
+    <div style="width:18px;height:18px;border-radius:50%;background:#888;border:2px solid #fff;margin-right:10px;opacity:0.8;"></div> Medium
+  </div>
+  <div style="display:flex; align-items:center;">
+    <div style="width:10px;height:10px;border-radius:50%;background:#888;border:2px solid #fff;margin-right:10px;opacity:0.8;"></div> Low
+  </div>
+</div>
 
-        // Load GeoJSON
-        fetch("data.geojson")
-          .then(response => response.json())
-          .then(data => {
-            data.features.forEach(feature => {
-              const coords = feature.geometry.coordinates;
-              const props = feature.properties;
+<script>
+  let map;
 
-              const affiliation = props["Affiliation"];
-              const members = props["Member Attribution"];
+  function initMap() {
+    map = new google.maps.Map(document.getElementById("map"), {
+      center: { lat: 40.0, lng: -75.2 },
+      zoom: 10,
+      mapTypeId: "roadmap",
+    });
 
-              // Circle size scale
-              const size = Math.max(8, Math.sqrt(members) * 1.4);
+    const affColors = {
+      "Main Line": "#1f77b4",
+      "Jefferson": "#ff7f0e",
+      "St. Luke's": "#2ca02c",
+      "Tandigm": "#d62728",
+      "UPenn": "#9467bd"
+    };
 
-              const color = getColor(affiliation);
+    const hoverBox = document.getElementById("hoverBox");
 
-              const marker = new google.maps.Circle({
-                strokeColor: "#ffffff",
-                strokeWeight: 2,
-                fillColor: color,
-                fillOpacity: 0.75,
-                center: { lat: coords[1], lng: coords[0] },
-                radius: size * 20,
-                map
-              });
+    fetch("data.geojson")
+      .then(r => r.json())
+      .then(data => {
+        data.features.forEach(f => {
+          const p = f.properties;
+          const coords = f.geometry.coordinates;
+          const color = affColors[p["Affiliation"]] || "#999";
 
-              const info = new google.maps.InfoWindow({
-                content: `
-                  <strong>${props["Provider / Facility"]}</strong><br>
-                  Affiliation: ${affiliation}<br>
-                  Members: ${members}<br>
-                  Address: ${props.Address}, ${props.City}, ${props.State} ${props.Zip}
-                `
-              });
+          const members = Number(p["Member Attribution"]) || 1;
 
-              marker.addListener("click", () => {
-                info.open({ anchor: marker, map });
-              });
-            });
-          })
-          .catch(err => {
-            alert("Could not load data.geojson. Check file name or format.");
-            console.error(err);
+          // Dynamic circle size (restored)
+          const size = Math.max(6, Math.sqrt(members) * 2.2);
+
+          const marker = new google.maps.Circle({
+            strokeColor: "#ffffff",
+            strokeWeight: 2,
+            fillColor: color,
+            fillOpacity: 0.88,
+            center: { lat: coords[1], lng: coords[0] },
+            radius: size * 22,
+            map: map,
           });
-      }
 
-      window.onload = initMap;
-    </script>
-  </body>
+          // Hover callout
+          google.maps.event.addListener(marker, "mouseover", (e) => {
+            hoverBox.style.display = "block";
+            hoverBox.style.left = e.domEvent.pageX + 12 + "px";
+            hoverBox.style.top = e.domEvent.pageY + 12 + "px";
+            hoverBox.innerHTML = `
+              <strong>${p["Provider / Facility"]}</strong><br>
+              Affiliation: ${p["Affiliation"]}<br>
+              Members: ${p["Member Attribution"]}<br>
+              ${p["Address"]}<br>
+              ${p["City"]}, ${p["State"]} ${p["Zip"]}
+            `;
+          });
+
+          google.maps.event.addListener(marker, "mouseout", () => {
+            hoverBox.style.display = "none";
+          });
+        });
+      })
+      .catch(err => alert("Could not load data.geojson. Check file path or format."));
+  }
+</script>
+
+<script async
+  src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDA3kRQCQIWUxnsE1b0__QSyCfFKkHwN8A&callback=initMap">
+</script>
+
+</body>
 </html>
