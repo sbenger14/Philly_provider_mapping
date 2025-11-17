@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Provider Map</title>
+  <title>Philly Provider Map</title>
 
   <style>
     html, body {
@@ -11,134 +11,200 @@
       padding: 0;
       font-family: Arial, sans-serif;
     }
+
     #map {
       height: 100%;
       width: 100%;
     }
 
-    /* Color Legend */
-    .legend {
+    /* Control boxes (like AllCare map) */
+    #legend, #info-box {
       position: absolute;
-      background: white;
-      padding: 10px 14px;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(255,255,255,0.95);
+      padding: 12px;
       border-radius: 8px;
       font-size: 14px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-      z-index: 9999;
+      box-shadow: 0px 2px 6px rgba(0,0,0,0.3);
+      width: 240px;
     }
 
-    /* Popup hover box */
-    .hover-box {
-      position: absolute;
-      background: white;
-      padding: 8px 12px;
-      border-radius: 6px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-      pointer-events: none;
-      font-size: 13px;
-      display: none;
+    #legend {
+      bottom: 20px;
+    }
+
+    #info-box {
+      bottom: 200px;
+    }
+
+    .legend-title {
+      font-weight: bold;
+      margin-bottom: 6px;
+      margin-top: 4px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+
+    .legend-color {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      margin-right: 6px;
+      border: 1px solid #555;
     }
   </style>
 </head>
 
 <body>
-<div id="map"></div>
-<div id="hoverBox" class="hover-box"></div>
+  <div id="map"></div>
 
-<!-- Affiliation Color Legend -->
-<div class="legend" style="bottom: 20px; left: 20px;">
-  <strong>Affiliation</strong><br><br>
-  <div><span style="background:#1f77b4;width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:8px;"></span>Main Line</div>
-  <div><span style="background:#ff7f0e;width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:8px;"></span>Jefferson</div>
-  <div><span style="background:#2ca02c;width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:8px;"></span>St. Luke's</div>
-  <div><span style="background:#d62728;width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:8px;"></span>Tandigm</div>
-  <div><span style="background:#9467bd;width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:8px;"></span>UPenn</div>
-</div>
-
-<!-- Circle Size Legend -->
-<div class="legend" style="bottom: 180px; left: 20px;">
-  <strong>Member Attribution</strong><br><br>
-
-  <div style="display:flex; align-items:center; margin-bottom:8px;">
-    <div style="width:26px;height:26px;border-radius:50%;background:#888;border:2px solid #fff;margin-right:10px;opacity:0.8;"></div> High
+  <!-- Info box (providers + totals) -->
+  <div id="info-box">
+    <strong>Visible Providers</strong><br>
+    <div id="provider-count">Providers: 0</div>
+    <div id="member-total">Total Members: 0</div>
   </div>
-  <div style="display:flex; align-items:center; margin-bottom:8px;">
-    <div style="width:18px;height:18px;border-radius:50%;background:#888;border:2px solid #fff;margin-right:10px;opacity:0.8;"></div> Medium
+
+  <!-- Legend -->
+  <div id="legend">
+    <div class="legend-title">By Affiliation</div>
+    <div class="legend-item"><div class="legend-color" style="background:#1f77b4;"></div>Main Line</div>
+    <div class="legend-item"><div class="legend-color" style="background:#ff7f0e;"></div>Jefferson</div>
+    <div class="legend-item"><div class="legend-color" style="background:#9467bd;"></div>St. Luke's</div>
+    <div class="legend-item"><div class="legend-color" style="background:#d62728;"></div>Tandigm</div>
+    <div class="legend-item"><div class="legend-color" style="background:#2ca02c;"></div>UPenn</div>
+
+    <br>
+    <div class="legend-title">Attributed Members = Circle Size</div>
+    <div class="legend-item">
+      <div class="legend-color" style="width:8px;height:8px;background:#999;"></div> Smallest
+    </div>
+    <div class="legend-item">
+      <div class="legend-color" style="width:22px;height:22px;background:#999;"></div> Largest
+    </div>
   </div>
-  <div style="display:flex; align-items:center;">
-    <div style="width:10px;height:10px;border-radius:50%;background:#888;border:2px solid #fff;margin-right:10px;opacity:0.8;"></div> Low
-  </div>
-</div>
 
-<script>
-  let map;
+  <script>
+    let map;
+    let circles = [];
+    let geojsonData;
 
-  function initMap() {
-    map = new google.maps.Map(document.getElementById("map"), {
-      center: { lat: 40.0, lng: -75.2 },
-      zoom: 10,
-      mapTypeId: "roadmap",
-    });
-
-    const affColors = {
+    // Affiliation → Color
+    const colorMap = {
       "Main Line": "#1f77b4",
       "Jefferson": "#ff7f0e",
-      "St. Luke's": "#2ca02c",
+      "St. Luke's": "#9467bd",
       "Tandigm": "#d62728",
-      "UPenn": "#9467bd"
+      "UPenn": "#2ca02c"
     };
 
-    const hoverBox = document.getElementById("hoverBox");
+    async function initMap() {
+      map = new google.maps.Map(document.getElementById('map'), {
+        center: { lat: 40.0, lng: -75.2 },
+        zoom: 9,
+        mapTypeId: 'roadmap'
+      });
 
-    fetch("data.geojson")
-      .then(r => r.json())
-      .then(data => {
-        data.features.forEach(f => {
-          const p = f.properties;
-          const coords = f.geometry.coordinates;
-          const color = affColors[p["Affiliation"]] || "#999";
+      // Load GeoJSON
+      try {
+        const response = await fetch("data.geojson");
+        geojsonData = await response.json();
+        renderCircles();
+        updateInfoBox();
+      } catch (err) {
+        alert("Could not load data.geojson. Check file path or format.");
+      }
 
-          const members = Number(p["Member Attribution"]) || 1;
+      // Update sizes on zoom
+      map.addListener("zoom_changed", () => {
+        updateCircleSizes();
+      });
 
-          // Dynamic circle size (restored)
-          const size = Math.max(6, Math.sqrt(members) * 2.2);
+      // Update totals when map moves
+      map.addListener("idle", () => {
+        updateInfoBox();
+      });
+    }
 
-          const marker = new google.maps.Circle({
-            strokeColor: "#ffffff",
-            strokeWeight: 2,
-            fillColor: color,
-            fillOpacity: 0.88,
-            center: { lat: coords[1], lng: coords[0] },
-            radius: size * 22,
-            map: map,
-          });
+    function renderCircles() {
+      geojsonData.features.forEach(feature => {
+        const props = feature.properties;
+        const coords = feature.geometry.coordinates;
 
-          // Hover callout
-          google.maps.event.addListener(marker, "mouseover", (e) => {
-            hoverBox.style.display = "block";
-            hoverBox.style.left = e.domEvent.pageX + 12 + "px";
-            hoverBox.style.top = e.domEvent.pageY + 12 + "px";
-            hoverBox.innerHTML = `
-              <strong>${p["Provider / Facility"]}</strong><br>
-              Affiliation: ${p["Affiliation"]}<br>
-              Members: ${p["Member Attribution"]}<br>
-              ${p["Address"]}<br>
-              ${p["City"]}, ${p["State"]} ${p["Zip"]}
-            `;
-          });
+        const affiliation = props["Affiliation"];
+        const members = props["Member Attribution"];
 
-          google.maps.event.addListener(marker, "mouseout", () => {
-            hoverBox.style.display = "none";
-          });
+        const circle = new google.maps.Circle({
+          strokeColor: colorMap[affiliation] || "#666",
+          strokeOpacity: 0.9,
+          strokeWeight: 1,
+          fillColor: colorMap[affiliation] || "#666",
+          fillOpacity: 0.55,
+          map,
+          center: { lat: coords[1], lng: coords[0] },
+          radius: scaleRadius(members)
         });
-      })
-      .catch(err => alert("Could not load data.geojson. Check file path or format."));
-  }
-</script>
 
-<script async
-  src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDA3kRQCQIWUxnsE1b0__QSyCfFKkHwN8A&callback=initMap">
-</script>
+        const content = `
+          <div style="font-size:14px;">
+            <strong>${props["Provider / Facility"]}</strong><br>
+            ${props.Address}, ${props.City}, ${props.State} ${props.Zip}<br>
+            <strong>Affiliation:</strong> ${affiliation}<br>
+            <strong>Members:</strong> ${members}
+          </div>
+        `;
+
+        const infowindow = new google.maps.InfoWindow({ content });
+
+        circle.addListener("click", () => {
+          infowindow.setPosition(circle.getCenter());
+          infowindow.open(map);
+        });
+
+        circles.push({ circle, members, affiliation });
+      });
+    }
+
+    function scaleRadius(memberCount) {
+      const zoom = map.getZoom();
+      return memberCount * (zoom * 20);
+    }
+
+    function updateCircleSizes() {
+      circles.forEach(obj => {
+        obj.circle.setRadius(scaleRadius(obj.members));
+      });
+    }
+
+    function updateInfoBox() {
+      const bounds = map.getBounds();
+      if (!bounds) return;
+
+      let visibleCount = 0;
+      let totalMembers = 0;
+
+      circles.forEach(obj => {
+        if (bounds.contains(obj.circle.getCenter())) {
+          visibleCount++;
+          totalMembers += obj.members;
+        }
+      });
+
+      document.getElementById("provider-count").textContent =
+        `Providers: ${visibleCount}`;
+      document.getElementById("member-total").textContent =
+        `Total Members: ${totalMembers.toLocaleString()}`;
+    }
+  </script>
+
+  <script async
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDA3kRQCQIWUxnsE1b0__QSyCfFKkHwN8A&callback=initMap">
+  </script>
 
 </body>
 </html>
