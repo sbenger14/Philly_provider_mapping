@@ -5,170 +5,136 @@
     <title>Provider Map</title>
 
     <style>
-      html, body {
-        height: 100%;
+      body, html {
         margin: 0;
         padding: 0;
-        font-family: Arial, sans-serif;
+        height: 100%;
+        width: 100%;
       }
-
       #map {
         height: 100%;
         width: 100%;
       }
+
+      /* Legend box */
+      .legend {
+        position: absolute;
+        bottom: 20px;
+        left: 20px;
+        background: white;
+        padding: 12px;
+        border-radius: 6px;
+        font-family: Arial, sans-serif;
+        font-size: 14px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      }
+      .legend-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 6px;
+      }
+      .legend-color {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        margin-right: 8px;
+        border: 2px solid #fff;
+      }
     </style>
+
+    <!-- Load Google Maps JS API -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDA3kRQCQIWUxnsE1b0__QSyCfFKkHwN8A"></script>
   </head>
 
   <body>
     <div id="map"></div>
 
+    <!-- Legend -->
+    <div class="legend" id="legend">
+      <div class="legend-item">
+        <div class="legend-color" style="background:#1f77b4;"></div> Main Line
+      </div>
+      <div class="legend-item">
+        <div class="legend-color" style="background:#ff7f0e;"></div> Jefferson
+      </div>
+      <div class="legend-item">
+        <div class="legend-color" style="background:#2ca02c;"></div> St. Luke's
+      </div>
+      <div class="legend-item">
+        <div class="legend-color" style="background:#d62728;"></div> Tandigm
+      </div>
+      <div class="legend-item">
+        <div class="legend-color" style="background:#9467bd;"></div> UPenn
+      </div>
+    </div>
+
     <script>
-      let map;
-      let markers = [];
-      let infoWindow;
-
       function initMap() {
-        map = new google.maps.Map(document.getElementById("map"), {
-          center: { lat: 39.95, lng: -75.16 },
-          zoom: 10,
-          mapTypeId: "roadmap",
-
-          // ⭐ Cleaner, muted map for better point visibility
-          styles: [
-            { elementType: "geometry", stylers: [{ lightness: 10 }] },
-            { elementType: "labels.text.fill", stylers: [{ color: "#555" }] },
-            { elementType: "labels.text.stroke", stylers: [{ color: "#ffffff" }] },
-            { featureType: "poi", stylers: [{ visibility: "off" }] },
-            { featureType: "transit", stylers: [{ visibility: "off" }] }
-          ]
+        const map = new google.maps.Map(document.getElementById("map"), {
+          zoom: 9,
+          center: { lat: 40.0, lng: -75.2 },
+          mapId: "providerMap"
         });
 
-        infoWindow = new google.maps.InfoWindow();
+        // Color mapping by affiliation
+        function getColor(aff) {
+          switch (aff) {
+            case "Main Line": return "#1f77b4";
+            case "Jefferson": return "#ff7f0e";
+            case "St. Luke's": return "#2ca02c";
+            case "Tandigm": return "#d62728";
+            case "UPenn": return "#9467bd";
+            default: return "#555";
+          }
+        }
 
+        // Load GeoJSON
         fetch("data.geojson")
-          .then(r => {
-            if (!r.ok) throw new Error("Could not load data.geojson");
-            return r.json();
-          })
-          .then(geojson => {
-            const features = geojson.features || [];
-            addMarkers(features);
+          .then(response => response.json())
+          .then(data => {
+            data.features.forEach(feature => {
+              const coords = feature.geometry.coordinates;
+              const props = feature.properties;
+
+              const affiliation = props["Affiliation"];
+              const members = props["Member Attribution"];
+
+              // Circle size scale
+              const size = Math.max(8, Math.sqrt(members) * 1.4);
+
+              const color = getColor(affiliation);
+
+              const marker = new google.maps.Circle({
+                strokeColor: "#ffffff",
+                strokeWeight: 2,
+                fillColor: color,
+                fillOpacity: 0.75,
+                center: { lat: coords[1], lng: coords[0] },
+                radius: size * 20,
+                map
+              });
+
+              const info = new google.maps.InfoWindow({
+                content: `
+                  <strong>${props["Provider / Facility"]}</strong><br>
+                  Affiliation: ${affiliation}<br>
+                  Members: ${members}<br>
+                  Address: ${props.Address}, ${props.City}, ${props.State} ${props.Zip}
+                `
+              });
+
+              marker.addListener("click", () => {
+                info.open({ anchor: marker, map });
+              });
+            });
           })
           .catch(err => {
+            alert("Could not load data.geojson. Check file name or format.");
             console.error(err);
-            alert("Could not load data.geojson. Check file path or format.");
           });
       }
 
-      function addMarkers(features) {
-        // Determine dataset min/max for circle sizes
-        let minP = Infinity, maxP = -Infinity;
-        features.forEach(f => {
-          const m = parseFloat(f.properties["Member Attribution"]);
-          if (!isNaN(m)) {
-            if (m < minP) minP = m;
-            if (m > maxP) maxP = m;
-          }
-        });
-        if (minP === Infinity) minP = maxP = 0;
-
-        features.forEach(feature => {
-          if (!feature.geometry || feature.geometry.type !== "Point") return;
-
-          const [lng, lat] = feature.geometry.coordinates;
-          const props = feature.properties;
-
-          const providerName =
-            props["Provider / Facility"] ||
-            props["Provider"] ||
-            props["Facility"] ||
-            "Unknown Provider";
-
-          const address = [
-            props.Address,
-            props.City,
-            props.State,
-            props.Zip
-          ].filter(Boolean).join(", ");
-
-          const patients = parseFloat(props["Member Attribution"]) || 0;
-          const type = props.Type || "Unknown";
-
-          // Compute radius (⭐ bumped min size from 6 → 10)
-          const radius = computeRadius(patients, minP, maxP);
-
-          // Assign color based on type
-          const color = getTypeColor(type);
-
-          // ⭐ Add shadow for depth
-          new google.maps.Marker({
-            position: { lat, lng },
-            map,
-            icon: {
-              path: google.maps.SymbolPath.CIRCLE,
-              fillColor: "#000000",
-              fillOpacity: 0.25,
-              strokeWeight: 0,
-              scale: radius + 3
-            },
-            zIndex: 1
-          });
-
-          // ⭐ Main marker with white halo outline
-          const marker = new google.maps.Marker({
-            position: { lat, lng },
-            map,
-            icon: {
-              path: google.maps.SymbolPath.CIRCLE,
-              fillColor: color,
-              fillOpacity: 0.85,
-              strokeColor: "#ffffff",   // white halo
-              strokeWeight: 2.2,         // thicker outline
-              scale: radius
-            },
-            zIndex: 2
-          });
-
-          marker.addListener("mouseover", () => {
-            infoWindow.setContent(`
-              <div>
-                <div style="font-weight:bold; font-size:14px; margin-bottom:4px;">${providerName}</div>
-                <div>${address}</div>
-                <div>Type: ${type}</div>
-                <div>Member Attribution: ${String(patients).replace(".0", "")}</div>
-              </div>
-            `);
-            infoWindow.open({ anchor: marker, map });
-          });
-
-          marker.addListener("mouseout", () => infoWindow.close());
-
-          markers.push(marker);
-        });
-      }
-
-      function computeRadius(p, minP, maxP) {
-        const minR = 10;  // ⭐ bumped from 6 → 10
-        const maxR = 32;
-
-        if (maxP <= minP) return (minR + maxR) / 2;
-        const norm = (p - minP) / (maxP - minP);
-        return minR + norm * (maxR - minR);
-      }
-
-      function getTypeColor(type) {
-        const t = type.toLowerCase();
-        if (t.includes("fqhc")) return "#d73027";
-        if (t.includes("performance")) return "#1a9850";
-        if (t.includes("hospital")) return "#542788";
-        if (t.includes("community")) return "#ffd92f";
-        return "#888888";
-      }
-    </script>
-
-    <script async defer 
-      src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDA3kRQCQIWUxnsE1b0__QSyCfFKkHwN8A&callback=initMap">
+      window.onload = initMap;
     </script>
   </body>
 </html>
-
