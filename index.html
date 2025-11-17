@@ -1,210 +1,450 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <meta charset="utf-8" />
-  <title>Philly Provider Map</title>
-
-  <style>
-    html, body {
-      height: 100%;
-      margin: 0;
-      padding: 0;
-      font-family: Arial, sans-serif;
-    }
-
-    #map {
-      height: 100%;
-      width: 100%;
-    }
-
-    /* Control boxes (like AllCare map) */
-    #legend, #info-box {
-      position: absolute;
-      bottom: 20px;
-      left: 20px;
-      background: rgba(255,255,255,0.95);
-      padding: 12px;
-      border-radius: 8px;
-      font-size: 14px;
-      box-shadow: 0px 2px 6px rgba(0,0,0,0.3);
-      width: 240px;
-    }
-
-    #legend {
-      bottom: 20px;
-    }
-
-    #info-box {
-      bottom: 200px;
-    }
-
-    .legend-title {
-      font-weight: bold;
-      margin-bottom: 6px;
-      margin-top: 4px;
-    }
-
-    .legend-item {
-      display: flex;
-      align-items: center;
-      margin-bottom: 4px;
-    }
-
-    .legend-color {
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      margin-right: 6px;
-      border: 1px solid #555;
-    }
-  </style>
-</head>
-
-<body>
-  <div id="map"></div>
-
-  <!-- Info box (providers + totals) -->
-  <div id="info-box">
-    <strong>Visible Providers</strong><br>
-    <div id="provider-count">Providers: 0</div>
-    <div id="member-total">Total Members: 0</div>
-  </div>
-
-  <!-- Legend -->
-  <div id="legend">
-    <div class="legend-title">By Affiliation</div>
-    <div class="legend-item"><div class="legend-color" style="background:#1f77b4;"></div>Main Line</div>
-    <div class="legend-item"><div class="legend-color" style="background:#ff7f0e;"></div>Jefferson</div>
-    <div class="legend-item"><div class="legend-color" style="background:#9467bd;"></div>St. Luke's</div>
-    <div class="legend-item"><div class="legend-color" style="background:#d62728;"></div>Tandigm</div>
-    <div class="legend-item"><div class="legend-color" style="background:#2ca02c;"></div>UPenn</div>
-
-    <br>
-    <div class="legend-title">Attributed Members = Circle Size</div>
-    <div class="legend-item">
-      <div class="legend-color" style="width:8px;height:8px;background:#999;"></div> Smallest
-    </div>
-    <div class="legend-item">
-      <div class="legend-color" style="width:22px;height:22px;background:#999;"></div> Largest
-    </div>
-  </div>
-
-  <script>
-    let map;
-    let circles = [];
-    let geojsonData;
-
-    // Affiliation → Color
-    const colorMap = {
-      "Main Line": "#1f77b4",
-      "Jefferson": "#ff7f0e",
-      "St. Luke's": "#9467bd",
-      "Tandigm": "#d62728",
-      "UPenn": "#2ca02c"
-    };
-
-    async function initMap() {
-      map = new google.maps.Map(document.getElementById('map'), {
-        center: { lat: 40.0, lng: -75.2 },
-        zoom: 9,
-        mapTypeId: 'roadmap'
-      });
-
-      // Load GeoJSON
-      try {
-        const response = await fetch("data.geojson");
-        geojsonData = await response.json();
-        renderCircles();
-        updateInfoBox();
-      } catch (err) {
-        alert("Could not load data.geojson. Check file path or format.");
+  <head>
+    <meta charset="utf-8" />
+    <title>AllCare Provider Map</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        font-family: Arial, sans-serif;
       }
 
-      // Update sizes on zoom
-      map.addListener("zoom_changed", () => {
-        updateCircleSizes();
-      });
+      #map {
+        height: 100%;
+        width: 100%;
+      }
 
-      // Update totals when map moves
-      map.addListener("idle", () => {
-        updateInfoBox();
-      });
-    }
+      /* Bottom-left control stack */
+      #controls-wrapper {
+        position: absolute;
+        bottom: 16px;
+        left: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        z-index: 5;
+      }
 
-    function renderCircles() {
-      geojsonData.features.forEach(feature => {
-        const props = feature.properties;
-        const coords = feature.geometry.coordinates;
+      .control-box {
+        background: rgba(255, 255, 255, 0.95);
+        padding: 8px 10px;
+        border-radius: 6px;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+        font-size: 12px;
+        max-width: 260px;
+      }
 
-        const affiliation = props["Affiliation"];
-        const members = props["Member Attribution"];
+      .control-title {
+        font-weight: bold;
+        margin-bottom: 4px;
+        font-size: 13px;
+      }
 
-        const circle = new google.maps.Circle({
-          strokeColor: colorMap[affiliation] || "#666",
-          strokeOpacity: 0.9,
-          strokeWeight: 1,
-          fillColor: colorMap[affiliation] || "#666",
-          fillOpacity: 0.55,
-          map,
-          center: { lat: coords[1], lng: coords[0] },
-          radius: scaleRadius(members)
+      /* Filter box */
+      #filter-box label {
+        font-size: 12px;
+      }
+      #filter-box input[type="number"] {
+        width: 80px;
+        font-size: 12px;
+        padding: 2px 4px;
+        margin-left: 4px;
+      }
+      #filter-box button {
+        margin-left: 6px;
+        font-size: 12px;
+        padding: 2px 6px;
+        cursor: pointer;
+      }
+
+      /* Legend */
+      #legend .legend-row {
+        display: flex;
+        align-items: center;
+        margin-bottom: 2px;
+      }
+      .legend-color {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-right: 6px;
+        border: 1px solid #555;
+      }
+      .legend-size-row {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+        margin-top: 4px;
+      }
+      .legend-size-item {
+        display: flex;
+        align-items: center;
+      }
+      .legend-size-circle {
+        border-radius: 50%;
+        border: 1px solid #555;
+        margin-right: 6px;
+      }
+
+      /* Visible providers panel */
+      #stats-box .stats-line {
+        margin-bottom: 2px;
+      }
+      #stats-box .stats-type-row {
+        display: flex;
+        align-items: flex-start;
+        margin-bottom: 2px;
+      }
+      .stats-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 6px;
+        margin-top: 3px;
+        border: 1px solid #555;
+        flex-shrink: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+
+    <div id="controls-wrapper">
+      <!-- Filter -->
+      <div id="filter-box" class="control-box">
+        <div class="control-title">Filter</div>
+        <label>
+          Min members:
+          <input id="minMembersInput" type="number" min="0" step="10" value="0" />
+        </label>
+        <button id="applyFilterBtn">Apply</button>
+      </div>
+
+      <!-- Stats -->
+      <div id="stats-box" class="control-box">
+        <div class="control-title">Visible Providers</div>
+        <div id="stats-content">
+          Providers: 0<br />
+          Total Members (Minus AMG & Location N/A): 0
+        </div>
+      </div>
+
+      <!-- Legend -->
+      <div id="legend" class="control-box">
+        <div class="control-title">Legend</div>
+
+        <!-- UPDATED: By Affiliation instead of Type -->
+        <div style="font-weight:bold; margin-bottom:4px;">By Affiliation</div>
+        <div class="legend-row">
+          <span class="legend-color" style="background:#1f78b4;"></span>Main Line
+        </div>
+        <div class="legend-row">
+          <span class="legend-color" style="background:#33a02c;"></span>Jefferson
+        </div>
+        <div class="legend-row">
+          <span class="legend-color" style="background:#e31a1c;"></span>St. Luke's
+        </div>
+        <div class="legend-row">
+          <span class="legend-color" style="background:#ff7f00;"></span>Tandigm
+        </div>
+        <div class="legend-row">
+          <span class="legend-color" style="background:#6a3d9a;"></span>UPenn
+        </div>
+        <div class="legend-row">
+          <span class="legend-color" style="background:#888888;"></span>Other / Unknown
+        </div>
+
+        <div style="margin-top:6px; font-weight:bold;">
+          Attributed Members = Circle Size
+        </div>
+        <div class="legend-size-row">
+          <div class="legend-size-item">
+            <span
+              id="legend-min-circle"
+              class="legend-size-circle"
+              style="width:8px; height:8px;"
+            ></span>
+            <span id="legend-min-text">Smallest: N/A</span>
+          </div>
+          <div class="legend-size-item">
+            <span
+              id="legend-max-circle"
+              class="legend-size-circle"
+              style="width:20px; height:20px;"
+            ></span>
+            <span id="legend-max-text">Largest: N/A</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let map;
+      let markers = [];
+      let allData = [];
+      let infoWindow;
+      let minPatientsGlobal = null;
+      let maxPatientsGlobal = null;
+
+      const STATIC_ALLCARE_MEMBERS = 521;
+      const STATIC_NA_MEMBERS = 14;
+
+      // NEW: Color by Affiliation instead of Type
+      function getAffiliationColor(affiliation) {
+        if (!affiliation) return "#888888";
+        const a = affiliation.toLowerCase();
+
+        if (a.includes("main line")) return "#1f78b4";
+        if (a.includes("jefferson")) return "#33a02c";
+        if (a.includes("st. luke")) return "#e31a1c";
+        if (a.includes("tandigm")) return "#ff7f00";
+        if (a.includes("upenn") || a.includes("u penn") || a.includes("penn"))
+          return "#6a3d9a";
+
+        return "#888888"; // other / unknown
+      }
+
+      function initMap() {
+        map = new google.maps.Map(document.getElementById("map"), {
+          center: { lat: 42.4, lng: -122.9 },
+          zoom: 9,
+          mapTypeId: "roadmap",
         });
 
-        const content = `
-          <div style="font-size:14px;">
-            <strong>${props["Provider / Facility"]}</strong><br>
-            ${props.Address}, ${props.City}, ${props.State} ${props.Zip}<br>
-            <strong>Affiliation:</strong> ${affiliation}<br>
-            <strong>Members:</strong> ${members}
-          </div>
+        infoWindow = new google.maps.InfoWindow();
+
+        fetch("data.geojson")
+          .then((r) => {
+            if (!r.ok) throw new Error("Could not load data.geojson");
+            return r.json();
+          })
+          .then((geojson) => {
+            allData = geojson.features || [];
+            createMarkers();
+            setupUI();
+          })
+          .catch((err) => {
+            console.error("Error loading GeoJSON:", err);
+            alert("Could not load data.geojson. Check file path or format.");
+          });
+      }
+
+      function createMarkers() {
+        let minP = Infinity,
+          maxP = -Infinity,
+          totalPAll = 0;
+
+        allData.forEach((f) => {
+          const v = parseFloat(f.properties?.["Member Attribution"]);
+          if (!isNaN(v)) {
+            if (v < minP) minP = v;
+            if (v > maxP) maxP = v;
+            totalPAll += v;
+          }
+        });
+
+        if (minP === Infinity) minP = maxP = 0;
+        minPatientsGlobal = minP;
+        maxPatientsGlobal = maxP;
+
+        document.getElementById("legend-min-text").textContent =
+          `Smallest: ${minP}`;
+        document.getElementById("legend-max-text").textContent =
+          `Largest: ${maxP}`;
+
+        const bounds = new google.maps.LatLngBounds();
+
+        allData.forEach((feature) => {
+          const geom = feature.geometry;
+          const props = feature.properties || {};
+          if (!geom || geom.type !== "Point") return;
+
+          const [lng, lat] = geom.coordinates;
+          const position = new google.maps.LatLng(lat, lng);
+          const patients = parseFloat(props["Member Attribution"]) || 0;
+
+          // NEW: Read Affiliation from properties
+          const affiliation = props.Affiliation || "";
+
+          // Robust provider / facility name lookup
+          const providerName =
+            props.name ||
+            props["Provider / Facility"] ||
+            props["Provider/Facility"] ||
+            props["Provider"] ||
+            props["Facility"] ||
+            "Unknown provider";
+
+          const address = [
+            props.Address,
+            props.City,
+            props.State,
+            props.Zip,
+          ]
+            .filter(Boolean)
+            .join(", ");
+
+          const radius = computeRadius(patients, minP, maxP);
+          const color = getAffiliationColor(affiliation);
+
+          const marker = new google.maps.Marker({
+            position,
+            map,
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              fillColor: color,
+              fillOpacity: 0.8,
+              strokeColor: "#333",
+              strokeWeight: 1,
+              scale: radius,
+            },
+          });
+
+          const openInfo = () => {
+            infoWindow.setContent(
+              `<div>
+                <div style="font-weight:bold;font-size:14px;margin-bottom:4px;">
+                  ${providerName}
+                </div>
+                <div>${address}</div>
+                <div>Affiliation: ${affiliation || "N/A"}</div>
+                <div>Member Attribution: ${patients
+                  .toString()
+                  .replace(".0", "")}</div>
+              </div>`
+            );
+            infoWindow.open({ anchor: marker, map, shouldFocus: false });
+          };
+
+          marker.addListener("mouseover", openInfo);
+          marker.addListener("click", openInfo);
+          marker.addListener("mouseout", () => infoWindow.close());
+
+          marker.customData = {
+            patients,
+            affiliation,
+            name: providerName,
+            address,
+          };
+          markers.push(marker);
+          bounds.extend(position);
+        });
+
+        if (!bounds.isEmpty()) map.fitBounds(bounds);
+        map.addListener("idle", updateStats);
+      }
+
+      function computeRadius(p, minP, maxP) {
+        const minR = 6,
+          maxR = 28;
+        if (maxP <= minP) return (minR + maxR) / 2;
+        const norm = (p - minP) / (maxP - minP);
+        return minR + norm * (maxR - minR);
+      }
+
+      function setupUI() {
+        document
+          .getElementById("applyFilterBtn")
+          .addEventListener("click", () => {
+            const val =
+              parseFloat(
+                document.getElementById("minMembersInput").value
+              ) || 0;
+            applyMinFilter(val);
+          });
+        document
+          .getElementById("minMembersInput")
+          .addEventListener("keyup", (e) => {
+            if (e.key === "Enter")
+              document.getElementById("applyFilterBtn").click();
+          });
+      }
+
+      function applyMinFilter(minVal) {
+        markers.forEach((m) => {
+          const pts = m.customData?.patients || 0;
+          m.setVisible(pts >= minVal);
+        });
+        updateStats();
+      }
+
+      function updateStats() {
+        if (!map) return;
+        const bounds = map.getBounds();
+        if (!bounds) return;
+
+        let providerCount = 0,
+          visibleMembers = 0,
+          allDynamic = 0;
+
+        // UPDATED: aggregate by affiliation
+        const byAffiliation = {};
+
+        markers.forEach((m) => {
+          const pts = m.customData?.patients || 0;
+          allDynamic += pts; // sum across ALL providers for denominator
+
+          if (!m.getVisible() || !bounds.contains(m.getPosition())) return;
+
+          providerCount++;
+          visibleMembers += pts;
+
+          const a = m.customData?.affiliation || "Unknown";
+          byAffiliation[a] ??= { count: 0, patients: 0 };
+          byAffiliation[a].count++;
+          byAffiliation[a].patients += pts;
+        });
+
+        const totalVisible = visibleMembers;
+        const grandTotal = allDynamic;
+        const percent = grandTotal
+          ? Math.round((totalVisible / grandTotal) * 100)
+          : 0;
+
+        const statsDiv = document.getElementById("stats-content");
+        let html = `
+          <div class="stats-line">Providers: ${providerCount}</div>
+          <div class="stats-line">Total Members (Minus AMG & Location N/A): ${totalVisible} (${percent}%)</div>
         `;
 
-        const infowindow = new google.maps.InfoWindow({ content });
-
-        circle.addListener("click", () => {
-          infowindow.setPosition(circle.getCenter());
-          infowindow.open(map);
-        });
-
-        circles.push({ circle, members, affiliation });
-      });
-    }
-
-    function scaleRadius(memberCount) {
-      const zoom = map.getZoom();
-      return memberCount * (zoom * 20);
-    }
-
-    function updateCircleSizes() {
-      circles.forEach(obj => {
-        obj.circle.setRadius(scaleRadius(obj.members));
-      });
-    }
-
-    function updateInfoBox() {
-      const bounds = map.getBounds();
-      if (!bounds) return;
-
-      let visibleCount = 0;
-      let totalMembers = 0;
-
-      circles.forEach(obj => {
-        if (bounds.contains(obj.circle.getCenter())) {
-          visibleCount++;
-          totalMembers += obj.members;
+        if (Object.keys(byAffiliation).length) {
+          html +=
+            '<div style="margin-top:4px; font-weight:bold;">By affiliation:</div>';
+          for (const [a, d] of Object.entries(byAffiliation)) {
+            html += `
+              <div class="stats-type-row">
+                <span class="stats-dot" style="background:${getAffiliationColor(
+                  a
+                )};"></span>
+                <span>${a}: ${d.count} providers (${d.patients} members)</span>
+              </div>`;
+          }
         }
-      });
 
-      document.getElementById("provider-count").textContent =
-        `Providers: ${visibleCount}`;
-      document.getElementById("member-total").textContent =
-        `Total Members: ${totalMembers.toLocaleString()}`;
-    }
-  </script>
+        html += `
+          <div style="margin-top:4px; font-weight:bold;">Other:</div>
+          <div class="stats-type-row">
+            <span class="stats-dot" style="background:#00b3b3;"></span>
+            <span>AllCare Medical Group: ${STATIC_ALLCARE_MEMBERS} members</span>
+          </div>
+          <div class="stats-type-row">
+            <span class="stats-dot" style="background:#999999;"></span>
+            <span>Location N/A: ${STATIC_NA_MEMBERS} members</span>
+          </div>
+        `;
+        statsDiv.innerHTML = html;
+      }
+    </script>
 
-  <script async
-    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDA3kRQCQIWUxnsE1b0__QSyCfFKkHwN8A&callback=initMap">
-  </script>
-
-</body>
+    <script
+      async
+      defer
+      src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDA3kRQCQIWUxnsE1b0__QSyCfFKkHwN8A&callback=initMap"
+    ></script>
+  </body>
 </html>
+
